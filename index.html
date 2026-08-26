@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#050505" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>BE Transit Board</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    background: #050505;
+    font-family: 'Courier New', monospace;
+    margin: 0;
+    padding: 20px;
+    color: #ffb000;
+  }
+  #controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  input {
+    background: #111; border: 1px solid #333; color: #ffb000;
+    padding: 8px 10px; border-radius: 4px; font-family: inherit;
+    font-size: 13px; flex: 1 1 260px; outline: none;
+  }
+  input::placeholder { color: #554400; }
+  input[type="number"] { flex: 0 0 110px; }
+  button {
+    background: #1a1400; border: 1px solid #443300; color: #ffb000;
+    padding: 8px 14px; border-radius: 4px; cursor: pointer; font-size: 13px;
+    font-family: inherit;
+  }
+  #favorites { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .fav-chip {
+    background: #1a1400; border: 1px solid #443300; color: #ffb000;
+    padding: 4px 10px; border-radius: 12px; cursor: pointer; font-size: 12px;
+    font-family: inherit;
+  }
+  .boards-row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .group-divider { border-top: 1px dashed #222; margin: 14px 0; opacity: 0.4; display: none; }
+
+  .board {
+    background: #0c0c0c; border: 1px solid #2a2a2a; border-radius: 4px;
+    padding: 16px 18px; min-width: 380px; flex: 1 1 420px;
+  }
+  .board-header {
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid #333; padding-bottom: 8px; margin-bottom: 10px;
+  }
+  .board-title { display: flex; align-items: center; }
+  .drag-handle {
+    display: inline-grid; grid-template-columns: repeat(2, 4px); grid-template-rows: repeat(3, 4px);
+    gap: 3px; cursor: grab; opacity: 0.35; margin-right: 8px;
+  }
+  .drag-handle:hover { opacity: 0.8; }
+  .drag-handle span { width: 4px; height: 4px; border-radius: 50%; background: #ffb000; }
+  .board { transition: transform 200ms ease, opacity 150ms ease; }
+  .board.dragging { opacity: 0.35; }
+
+  .station-name { font-size: 13px; letter-spacing: 1px; text-transform: uppercase; font-weight: 700; }
+  .board-actions { display: flex; gap: 10px; align-items: center; }
+  .board-actions button { background: none; border: none; cursor: pointer; padding: 2px; font-size: 13px; }
+  .board-actions button:not(.remove-btn):not(.star-btn):not(.search-btn) { color: #ffb000; }
+  .star-btn.active, .search-btn.active { color: #ffb000 !important; }
+  .star-btn, .search-btn { color: #443300 !important; }
+  .remove-btn { color: #665500 !important; }
+
+  .search-row { display: none; gap: 6px; margin-bottom: 10px; }
+  .search-row.active { display: flex; }
+  .search-row input {
+    background: #111; border: 1px solid #333; color: #ffb000;
+    padding: 6px 8px; border-radius: 4px; font-family: inherit;
+    font-size: 12px; flex: 1; outline: none;
+  }
+
+  .dep-header, .dep-row {
+    display: grid;
+    grid-template-columns: 46px 34px minmax(90px, 1fr) 46px 40px 58px 36px;
+    gap: 8px;
+    align-items: baseline;
+  }
+  .dep-header {
+    font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase;
+    color: #665500; padding-bottom: 4px; border-bottom: 1px solid #262626; margin-bottom: 4px;
+  }
+  .dep-row {
+    font-size: 12px; padding: 4px 0; border-bottom: 1px dashed #222; cursor: pointer;
+  }
+  .dep-row.leave-now { background: rgba(255, 176, 0, 0.08); border-left: 2px solid #ffb000; padding-left: 4px; }
+  .dep-row.cancelled { opacity: 0.5; }
+  .dep-time { font-weight: 700; }
+  .dep-badge {
+    font-size: 10px; font-weight: 700; padding: 1px 4px; border-radius: 3px;
+    background: #442200; color: #ffb000; text-align: center;
+  }
+  .dep-badge.strain { background: #ffb000; color: #000; }
+  .dep-dest { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
+  .dep-arr, .dep-stops { color: #997700; }
+  .dep-delay { color: #665500; }
+  .dep-delay.mid { color: #ffb000; }
+  .dep-delay.late { color: #ff5c5c; }
+  .dep-row.cancelled .dep-delay { color: #ff5c5c; font-weight: 700; }
+  .dep-plat { color: #665500; }
+
+  .dep-details {
+    display: none; padding: 4px 0 8px 8px; margin: 0 0 4px 4px;
+    border-left: 1px dashed #333; font-size: 11px; color: #997700;
+  }
+  .dep-details.open { display: block; }
+  .stop-line { padding: 2px 0; }
+
+  .empty, .error { color: #665500; font-size: 12px; }
+  .error { color: #ff5c5c; }
+
+  @media (max-width: 480px) {
+    body { padding: 12px; }
+    .board { min-width: 100%; padding: 12px 14px; }
+    .dep-header, .dep-row {
+      grid-template-columns: 40px 28px minmax(70px, 1fr) 40px 34px 50px 30px;
+      font-size: 11px; gap: 4px;
+    }
+    #controls { flex-direction: column; align-items: stretch; }
+    #controls input, #controls button { width: 100%; flex: 1 1 auto; }
+  }
+</style>
+</head>
+<body>
+
+<div id="controls">
+  <input id="stationInput" placeholder="Add station, e.g. Gent-Sint-Pieters" />
+  <button onclick="addStation()">+ Add</button>
+  <button onclick="addNearestStation()" title="Add nearest station">&#128205; Nearest</button>
+  <input id="walkMinutes" type="number" min="0" placeholder="Walk (min)" onchange="saveWalkMinutes(this.value)" />
+</div>
+
+<div id="favorites"></div>
+
+<div id="boards-fav" class="boards-row"></div>
+<div class="group-divider" id="groupDivider"></div>
+<div id="boards-other" class="boards-row"></div>
+
+<script>
+let stations = loadStations();
+const timers = {};
+const vehicleCache = {};
+const searchQueries = {};
+let stationListCache = null;
+let touchDragEl = null;
+
+// ---------- persistence ----------
+
+function loadStations() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("beTransitStations"));
+    if (Array.isArray(saved) && saved.length) return saved;
+  } catch (e) {}
+  return ["Antwerpen-Centraal", "Brussel-Zuid"];
+}
+function saveStations() {
+  localStorage.setItem("beTransitStations", JSON.stringify(stations));
+}
+function loadFavorites() {
+  try {
+    return JSON.parse(localStorage.getItem("beTransitFavorites") || "[]");
+  } catch (e) {
+    return [];
+  }
+}
+function saveFavorites(favs) {
+  localStorage.setItem("beTransitFavorites", JSON.stringify(favs));
+}
+function getWalkMinutes() {
+  return parseInt(localStorage.getItem("beTransitWalkMinutes") || "0", 10);
+}
+function saveWalkMinutes(val) {
+  localStorage.setItem("beTransitWalkMinutes", val || "0");
+  stations.forEach(fetchBoard);
+}
+function cacheKey(station) { return "beTransitCache_" + station; }
+
+// ---------- stations / favorites ----------
+
+function addStationByName(name) {
+  if (name && !stations.includes(name)) {
+    stations.push(name);
+    saveStations();
+    renderBoards();
+  }
+}
+function addStation() {
+  const input = document.getElementById("stationInput");
+  addStationByName(input.value.trim());
+  input.value = "";
+}
+function addFavorite(station) { addStationByName(station); }
+function removeStation(name) {
+  stations = stations.filter(s => s !== name);
+  if (timers[name]) clearInterval(timers[name]);
+  saveStations();
+  renderBoards();
+}
+function toggleFavorite(station) {
+  let favs = loadFavorites();
+  favs = favs.includes(station) ? favs.filter(f => f !== station) : [...favs, station];
+  saveFavorites(favs);
+  renderFavorites();
+  renderBoards();
+}
+function renderFavorites() {
+  const favs = loadFavorites();
+  document.getElementById("favorites").innerHTML = favs.map(f =>
+    `<span class="fav-chip" onclick="addFavorite('${f.replace(/'/g, "\\'")}')">&#9733; ${f}</span>`
+  ).join("");
+}
+
+// ---------- search ----------
+
+function toggleSearch(station) {
+  const row = document.getElementById("search-" + cssId(station));
+  row.classList.toggle("active");
+  if (row.classList.contains("active")) row.querySelector("input").focus();
+}
+function applySearch(station, query) {
+  const q = query.trim();
+  if (q) searchQueries[station] = q; else delete searchQueries[station];
+  fetchBoard(station);
+}
+function clearSearch(station) {
+  delete searchQueries[station];
+  const row = document.getElementById("search-" + cssId(station));
+  row.classList.remove("active");
+  row.querySelector("input").value = "";
+  fetchBoard(station);
+}
+
+// ---------- formatting ----------
+
+function formatDelay(seconds) {
+  const s = parseInt(seconds, 10) || 0;
+  if (s === 0) return null;
+  return "+" + Math.round(s / 60);
+}
+function delayTierClass(seconds) {
+  const s = parseInt(seconds, 10) || 0;
+  if (s === 0) return "";
+  return s <= 300 ? "mid" : "late";
+}
+function formatTime(unixSeconds) {
+  const d = new Date(parseInt(unixSeconds, 10) * 1000);
+  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
+function trainType(vehicleId, vehicleinfo) {
+  const shortname = vehicleinfo?.shortname || vehicleId.split(".").pop();
+  const match = shortname.match(/^[A-Za-z]+/);
+  return match ? match[0].toUpperCase() : "?";
+}
+function isLeaveNow(depTimeUnix) {
+  const walk = getWalkMinutes();
+  if (!walk) return false;
+  const mins = (parseInt(depTimeUnix, 10) * 1000 - Date.now()) / 60000;
+  return mins >= 0 && mins <= walk;
+}
+function cssId(s) { return s.replace(/[^a-zA-Z0-9]/g, "_"); }
+
+// ---------- vehicle info (arrival, stop count, full stop list) ----------
+
+async function fetchVehicleInfo(vehicleId) {
+  if (vehicleCache[vehicleId]) return vehicleCache[vehicleId];
+  try {
+    const url = "https://api.irail.be/vehicle/?id=" + encodeURIComponent(vehicleId) + "&format=json&lang=en";
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error("vehicle fetch failed");
+    const data = await res.json();
+    let stops = data?.stops?.stop || [];
+    if (!Array.isArray(stops)) stops = [stops];
+    const last = stops[stops.length - 1];
+    const info = {
+      arrival: last ? last.time : null,
+      stopCount: stops.length,
+      stops: stops.map(s => ({ station: s.station, time: s.time })),
+    };
+    vehicleCache[vehicleId] = info;
+    return info;
+  } catch (e) {
+    return { arrival: null, stopCount: null, stops: [] };
+  }
+}
+
+// ---------- rendering departures ----------
+
+function depRowHTML(dep, type, isS, vinfo, rowId) {
+  const isCancelled = dep.canceled === "1";
+  const delayClass = isCancelled ? "" : delayTierClass(dep.delay);
+  const plat = (dep.platform && dep.platform !== "?") ? "P" + dep.platform : "";
+  const arr = vinfo.arrival ? formatTime(vinfo.arrival) : "-";
+  const stopsNum = vinfo.stopCount ? vinfo.stopCount - 1 : null;
+  const leaveNow = !isCancelled && isLeaveNow(dep.time);
+  const stopsListHTML = (vinfo.stops || []).map(st =>
+    `<div class="stop-line">${formatTime(st.time)} — ${st.station}</div>`
+  ).join("");
+
+  return `
+    <div class="dep-row ${isCancelled ? "cancelled" : ""} ${leaveNow ? "leave-now" : ""}" onclick="toggleDetails('${rowId}')">
+      <span class="dep-time">${formatTime(dep.time)}</span>
+      <span class="dep-badge ${isS ? "strain" : ""}">${type}</span>
+      <span class="dep-dest">${dep.station}</span>
+      <span class="dep-arr">${arr}</span>
+      <span class="dep-stops">${stopsNum ?? "-"}</span>
+      <span class="dep-delay ${delayClass}">${isCancelled ? "CANCELLED" : (formatDelay(dep.delay) || "ON TIME")}</span>
+      <span class="dep-plat">${plat}</span>
+    </div>
+    <div class="dep-details" id="${rowId}">${stopsListHTML || '<div class="empty">No stop data.</div>'}</div>
+  `;
+}
+function toggleDetails(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle("open");
+}
+
+async function renderDepartures(el, list, station, data, staleTs) {
+  let deps = data?.departures?.departure || [];
+  if (!Array.isArray(deps)) deps = [deps];
+
+  const query = searchQueries[station];
+  let matched = deps;
+  if (query) {
+    const flags = await Promise.all(deps.map(async dep => {
+      const vinfo = await fetchVehicleInfo(dep.vehicle);
+      return (vinfo.stops || []).some(s => s.station.toLowerCase().includes(query.toLowerCase()));
+    }));
+    matched = deps.filter((_, i) => flags[i]);
+  }
+
+  const staleNote = staleTs
+    ? `<div class="empty">Offline — showing data from ${formatTime(Math.floor(staleTs / 1000))}.</div>`
+    : "";
+
+  if (matched.length === 0) {
+    list.innerHTML = staleNote + (query
+      ? `<div class="empty">No departures found via "${query}".</div>`
+      : '<div class="empty">No departures found. Check the station name.</div>');
+    return;
+  }
+
+  const shown = matched.slice(0, 6);
+  list.innerHTML = staleNote + '<div class="empty">Loading...</div>';
+
+  const rows = await Promise.all(shown.map(async dep => {
+    const type = trainType(dep.vehicle, dep.vehicleinfo);
+    const vinfo = await fetchVehicleInfo(dep.vehicle);
+    const rowId = cssId(station) + "_" + cssId(dep.vehicle) + "_" + dep.time;
+    return depRowHTML(dep, type, type === "S", vinfo, rowId);
+  }));
+
+  list.innerHTML = staleNote + rows.join("");
+}
+
+async function fetchBoard(station) {
+  const el = document.getElementById("board-" + cssId(station));
+  if (!el) return;
+  const list = el.querySelector(".dep-list");
+  list.innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    const url = "https://api.irail.be/liveboard/?station=" + encodeURIComponent(station) + "&format=json&lang=en&arrdep=departure";
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error("iRail returned " + res.status);
+    const data = await res.json();
+    localStorage.setItem(cacheKey(station), JSON.stringify({ data, ts: Date.now() }));
+    el.querySelector(".station-name").textContent = data.station || station;
+    await renderDepartures(el, list, station, data, null);
+  } catch (e) {
+    const cachedRaw = localStorage.getItem(cacheKey(station));
+    if (cachedRaw) {
+      try {
+        const cached = JSON.parse(cachedRaw);
+        el.querySelector(".station-name").textContent = cached.data.station || station;
+        await renderDepartures(el, list, station, cached.data, cached.ts);
+        return;
+      } catch (e2) {}
+    }
+    list.innerHTML = '<div class="error">Could not load: ' + e.message + '</div>';
+  }
+}
+
+// ---------- board template + layout (favorites / others split) ----------
+
+function boardTemplate(s, isFav) {
+  const esc = s.replace(/'/g, "\\'");
+  const searching = !!searchQueries[s];
+  return `
+    <div class="board" id="board-${cssId(s)}" data-station="${s}">
+      <div class="board-header">
+        <div class="board-title">
+          <span class="drag-handle" title="Drag to reorder">
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+          </span>
+          <span class="station-name">${s}</span>
+        </div>
+        <div class="board-actions">
+          <button class="star-btn ${isFav ? "active" : ""}" onclick="toggleFavorite('${esc}')" title="Favorite">&#9733;</button>
+          <button class="search-btn ${searching ? "active" : ""}" onclick="toggleSearch('${esc}')" title="Search via a stop">&#128269;</button>
+          <button onclick="fetchBoard('${esc}')" title="Refresh">&#8635;</button>
+          <button class="remove-btn" onclick="removeStation('${esc}')" title="Remove">&times;</button>
+        </div>
+      </div>
+      <div class="search-row" id="search-${cssId(s)}">
+        <input type="text" placeholder="Search a stop it passes through, e.g. Gent"
+          onkeydown="if(event.key==='Enter') applySearch('${esc}', this.value)" />
+        <button onclick="clearSearch('${esc}')" title="Clear search">&times;</button>
+      </div>
+      <div class="dep-header">
+        <span>Time</span><span>Type</span><span>Destination</span><span>Arr</span><span>Stops</span><span>Delay</span><span>Plat</span>
+      </div>
+      <div class="dep-list"><div class="empty">Loading...</div></div>
+    </div>
+  `;
+}
+
+function renderBoards() {
+  const favs = loadFavorites();
+  const favStations = stations.filter(s => favs.includes(s));
+  const otherStations = stations.filter(s => !favs.includes(s));
+
+  document.getElementById("boards-fav").innerHTML = favStations.map(s => boardTemplate(s, true)).join("");
+  document.getElementById("boards-other").innerHTML = otherStations.map(s => boardTemplate(s, false)).join("");
+  document.getElementById("groupDivider").style.display = (favStations.length && otherStations.length) ? "block" : "none";
+
+  stations.forEach(s => {
+    fetchBoard(s);
+    if (timers[s]) clearInterval(timers[s]);
+    timers[s] = setInterval(() => fetchBoard(s), 45000);
+  });
+  attachDragHandlers();
+  attachTouchHandlers();
+}
+
+// ---------- drag to reorder (mouse + touch), remembered across reloads ----------
+
+function attachDragHandlers() {
+  document.querySelectorAll(".drag-handle").forEach(handle => {
+    handle.addEventListener("mousedown", () => handle.closest(".board").setAttribute("draggable", "true"));
+    handle.addEventListener("mouseup", () => handle.closest(".board").setAttribute("draggable", "false"));
+  });
+  document.querySelectorAll(".board").forEach(board => {
+    board.addEventListener("dragstart", e => {
+      board.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", board.dataset.station);
+    });
+    board.addEventListener("dragend", () => {
+      board.classList.remove("dragging");
+      board.setAttribute("draggable", "false");
+      syncStationsFromDOM();
+    });
+  });
+}
+function attachTouchHandlers() {
+  document.querySelectorAll(".drag-handle").forEach(handle => {
+    handle.addEventListener("touchstart", () => {
+      touchDragEl = handle.closest(".board");
+      touchDragEl.classList.add("dragging");
+    }, { passive: true });
+  });
+}
+function getDragTarget(container, x, y) {
+  const boards = [...container.querySelectorAll(".board:not(.dragging)")];
+  let closest = { dist: Infinity, el: null, rect: null };
+  boards.forEach(b => {
+    const rect = b.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dist = Math.hypot(x - cx, y - cy);
+    if (dist < closest.dist) closest = { dist, el: b, rect };
+  });
+  return closest;
+}
+function animateFlip(container, prevRects) {
+  container.querySelectorAll(".board").forEach(b => {
+    const first = prevRects[b.dataset.station];
+    if (!first) return;
+    const last = b.getBoundingClientRect();
+    const dx = first.left - last.left;
+    const dy = first.top - last.top;
+    if (dx || dy) {
+      b.style.transition = "none";
+      b.style.transform = `translate(${dx}px, ${dy}px)`;
+      requestAnimationFrame(() => {
+        b.style.transition = "transform 200ms ease";
+        b.style.transform = "";
+      });
+    }
+  });
+}
+function syncStationsFromDOM() {
+  const favOrder = [...document.getElementById("boards-fav").querySelectorAll(".board")].map(b => b.dataset.station);
+  const otherOrder = [...document.getElementById("boards-other").querySelectorAll(".board")].map(b => b.dataset.station);
+  stations = [...favOrder, ...otherOrder];
+  saveStations();
+}
+function setupDragover(containerId) {
+  document.getElementById(containerId).addEventListener("dragover", e => {
+    e.preventDefault();
+    const dragging = document.querySelector(".board.dragging");
+    if (!dragging) return;
+    const container = e.currentTarget;
+    if (dragging.parentNode !== container) return;
+    const target = getDragTarget(container, e.clientX, e.clientY);
+    if (!target.el || target.el === dragging) return;
+    const prevRects = {};
+    container.querySelectorAll(".board").forEach(b => { prevRects[b.dataset.station] = b.getBoundingClientRect(); });
+    const before = e.clientX < target.rect.left + target.rect.width / 2;
+    container.insertBefore(dragging, before ? target.el : target.el.nextSibling);
+    animateFlip(container, prevRects);
+  });
+}
+setupDragover("boards-fav");
+setupDragover("boards-other");
+document.addEventListener("touchmove", e => {
+  if (!touchDragEl) return;
+  const touch = e.touches[0];
+  const container = touchDragEl.parentNode;
+  const target = getDragTarget(container, touch.clientX, touch.clientY);
+  if (!target.el || target.el === touchDragEl) return;
+  const prevRects = {};
+  container.querySelectorAll(".board").forEach(b => { prevRects[b.dataset.station] = b.getBoundingClientRect(); });
+  const before = touch.clientX < target.rect.left + target.rect.width / 2;
+  container.insertBefore(touchDragEl, before ? target.el : target.el.nextSibling);
+  animateFlip(container, prevRects);
+}, { passive: true });
+document.addEventListener("touchend", () => {
+  if (!touchDragEl) return;
+  touchDragEl.classList.remove("dragging");
+  syncStationsFromDOM();
+  touchDragEl = null;
+});
+
+// ---------- geolocation: add nearest station ----------
+
+async function fetchAllStations() {
+  if (stationListCache) return stationListCache;
+  const res = await fetch("https://api.irail.be/stations/?format=json&lang=en");
+  const data = await res.json();
+  stationListCache = data.station || [];
+  return stationListCache;
+}
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+function addNearestStation() {
+  if (!navigator.geolocation) { alert("Geolocation not supported in this browser."); return; }
+  navigator.geolocation.getCurrentPosition(async pos => {
+    try {
+      const list = await fetchAllStations();
+      let closest = null, minDist = Infinity;
+      list.forEach(s => {
+        const lat = parseFloat(s.locationY);
+        const lon = parseFloat(s.locationX);
+        if (isNaN(lat) || isNaN(lon)) return;
+        const d = haversineKm(pos.coords.latitude, pos.coords.longitude, lat, lon);
+        if (d < minDist) { minDist = d; closest = s.name; }
+      });
+      if (closest) addStationByName(closest);
+    } catch (e) {
+      alert("Could not determine nearest station.");
+    }
+  }, () => alert("Location permission denied or unavailable."));
+}
+
+// ---------- tab title: countdown for top favorite ----------
+
+function updateTabTitle() {
+  const favs = loadFavorites();
+  if (!favs.length) { document.title = "BE Transit Board"; return; }
+  const cached = localStorage.getItem(cacheKey(favs[0]));
+  if (!cached) { document.title = "BE Transit Board"; return; }
+  try {
+    const { data } = JSON.parse(cached);
+    let deps = data?.departures?.departure || [];
+    if (!Array.isArray(deps)) deps = [deps];
+    const next = deps.find(d => d.canceled !== "1");
+    if (!next) { document.title = "BE Transit Board"; return; }
+    const mins = Math.max(0, Math.round((parseInt(next.time, 10) * 1000 - Date.now()) / 60000));
+    document.title = mins + " min · " + favs[0] + " to " + next.station;
+  } catch (e) {
+    document.title = "BE Transit Board";
+  }
+}
+setInterval(updateTabTitle, 15000);
+
+// ---------- minimal PWA scaffold (only active once hosted, not on file://) ----------
+
+(function setupPWA() {
+  try {
+    const manifest = {
+      name: "BE Transit Board", short_name: "Transit", start_url: ".",
+      display: "standalone", background_color: "#050505", theme_color: "#050505"
+    };
+    const blob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
+    const link = document.createElement("link");
+    link.rel = "manifest";
+    link.href = URL.createObjectURL(blob);
+    document.head.appendChild(link);
+  } catch (e) {}
+  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+    const swBlob = new Blob(["self.addEventListener('fetch', () => {});"], { type: "application/javascript" });
+    navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(() => {});
+  }
+})();
+
+// ---------- init ----------
+
+document.getElementById("walkMinutes").value = getWalkMinutes() || "";
+document.getElementById("stationInput").addEventListener("keydown", e => { if (e.key === "Enter") addStation(); });
+renderFavorites();
+renderBoards();
+updateTabTitle();
+</script>
+
+</body>
+</html>
